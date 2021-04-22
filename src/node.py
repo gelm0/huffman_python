@@ -1,6 +1,6 @@
 class Node:
     def __init__(self, symbol, freq):
-        self._symbol = symbol;
+        self._symbol = symbol
         self._freq = freq
         self._left_child = None
         self._right_child = None
@@ -11,8 +11,10 @@ class Node:
     def __eq__(self, other):
         if not isinstance(other, Node):
             return False
-        if other == None:
+
+        if other is None:
             return False
+
         return (self._symbol == other._symbol) and (self._freq == other._freq)
 
     def __hash__(self):
@@ -22,9 +24,11 @@ class Node:
         self._right_child = rchild
         self._left_child = lchild
 
+    def get_symbol(self):
+        return self._symbol
+
     def get_rchild(self):
         return self._right_child
 
     def get_lchild(self):
         return self._left_child
-
