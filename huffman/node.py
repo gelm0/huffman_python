@@ -19,8 +19,11 @@ class Node:
 
     def __hash__(self):
         return hash((self._symbol, self._freq))
+    
+    def get_freq(self) -> int:
+        return self._freq
 
-    def set_childs(self, lchild, rchild):
+    def set_childs(self, lchild, rchild) -> None:
         self._right_child = rchild
         self._left_child = lchild
 

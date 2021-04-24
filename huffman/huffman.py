@@ -1,10 +1,10 @@
 import argparse
+import sys
 import os.path
-import bitarray
+from bitarray import bitarray, decodetree
 import huffmantree
-from bitarray import decodetree
 
-__VERBOSE__ = False
+__verbose__ = False
 
 
 class HuffmanInitException(Exception):
@@ -43,7 +43,7 @@ def compress_file(input_file, output_file):
     output_file: file, required
         The output file which where the encoded data should be written.
     '''
-    huffman = huffmantree.HuffmanTree(print_tree=__VERBOSE__)
+    huffman = huffmantree.HuffmanTree(print_tree=__verbose__)
     symbol_tree = huffman.get_symbol_tree(file_name=input_file)
     with open(input_file, 'r') as fin, open(output_file, 'wb') as fout:
         compressed_data = compress(symbol_tree, fin.read())
@@ -70,7 +70,7 @@ def decompress_file(input_file, output_file):
     HuffmanHeaderException
         If header can't be decoded or the file doesn't contain a valid header.
     '''
-    with open(input_file, 'r') as fin, open(output_file, 'wb') as fout:
+    with open(input_file, 'rb') as fin, open(output_file, 'w') as fout:
         decompressed_data = decompress(fin.read())
         fout.write(decompressed_data)
 
@@ -81,7 +81,7 @@ def compress(symbol_tree, data):
     '''
     header = construct_header(symbol_tree)
     encoded_data = encode(symbol_tree, data)
-
+    print(header+encoded_data)
     return header + encoded_data
 
 
@@ -118,11 +118,12 @@ def construct_header(symbol_tree: dict):
 
     for symbol, code in symbol_tree.items():
         if not left_tree_visited and code.to01().startswith('1'):
-            symbols += b'-1\n'
+            symbols += b'-1, -1\n'
             left_tree_visited = True
         symbols += b'%d,%s\n' % (ord(symbol), code.to01()[1:].encode())
 
-    return symbols[:-1] + b'\n'
+    # Need an indicator to know where header ends
+    return symbols + b'HEND\n'
 
 
 def encode(symbol_tree: dict, text: str):
@@ -130,73 +131,92 @@ def encode(symbol_tree: dict, text: str):
     encode = bitarray()
     encode.encode(symbol_tree, text)
     unused = encode.buffer_info()[3]
-    unused_buffer = b'%d\n' % unused
+    unused_buffer = b'%d' % unused
 
-    return unused_buffer + encode.tobytes()
+    return encode.tobytes() + b'\n' + unused_buffer
 
 def deconstruct_compressed_data(compressed_data):
     split_data = compressed_data.split(b'\n')
-    header = split_data[0]
-    unused = int(split_data[1])
-    encoded_data = b'\n'.join(split_data[2:])
+    header = {}
+    data_start = -1
+    for index, line in enumerate(split_data):
+        if line == b'HEND':
+            data_start = index + 1
+            break
+        keyval = line.decode().split(',')
+        header[keyval[0]] = keyval[1]
+    unused = int(split_data[-1])
+    encoded_data = split_data[data_start:-1]
+    bitdata = bitarray()
+    bitdata.frombytes(b''.join(encoded_data))
 
     if unused > 0:
-        del encoded_data[-unused:]
+        del bitdata[-unused:]
 
-    return header, encoded_data
+    return header, bitdata
 
 
-def read_header(header: bin):
+def read_header(header: dict) -> dict:
     '''Constructs a huffman dictionary from the header {symbol, bitarray}'''
     symbol_tree = {}
     # We start from the left
     tree_path_prefix = '0'
     left_tree_visited = False
 
-    for s in header.split():
-        if not left_tree_visited and s == b'-1':
+    print(header)
+    for key, val in header.items():
+        if not left_tree_visited and key == '-1':
             tree_path_prefix = '1'
             left_tree_visited = True
-
             continue
-        val = s.decode().split(',')
-        symbol_tree[chr(int(val[0]))] = bitarray(tree_path_prefix + val[1])
 
+        print(key, val)
+        symbol_tree[chr(int(key))] = bitarray(tree_path_prefix + val)
+
+    print('SYMBOL_TREE')
+    print(symbol_tree)
     return symbol_tree
 
 
-def decode(symbol_tree: dict, encoded_data: bin):
+def decode(symbol_tree: dict, encoded_data):
     '''Decompresses bytes in data into it's original format'''
-    encoded = bitarray()
-    encoded.frombytes(encoded_data)
     decode_tree = decodetree(symbol_tree)
-    return encoded.decode(decode_tree)
+    decoded_list = encoded_data.decode(decode_tree)
+    return ''.join(decoded_list)
 
 
-def check_input(input_file: str, output_file: str):
+def check_input(input_file: str, output_file: str) -> None:
+    '''
+    Checks input and output file of user input in main function
+    Exits with a negative value if it finds any errors otherwise
+    does nothing
+    '''
     if not input_file:
-        print('No input file is supplied')
-        exit(-1)
+        exit_with_message('No input file is supplied')
 
     if not output_file:
-        print('No output file is supplied')
-        exit(-1)
-    
+        exit_with_message('No output file is supplied')
+ 
     if not os.path.isfile(input_file):
-        print('Input file doesn\'t exist')
-        exit(-1)
+        exit_with_message('Input file doesn\'t exist')
 
     if os.path.isdir(output_file):
-        print('Output file can\'t be a directory')
-        exit(-1)
+        exit_with_message('Output file can\'t be a directory')
 
     if (dir_split := output_file.rfind('/')) > 0:
         if not os.path.exists(output_file[:dir_split + 1]):
-            print('Specified path to output file doesn\'t exist')
-            exit(-1)
+            exit_with_message('Specified path to output file doesn\'t exist')
 
 
-def main():
+def exit_with_message(message: str, exitcode: int = -1) -> None:
+    """
+    Print message to stdout before exit
+    """
+    print(message)
+    sys.exit(exitcode)
+
+
+def main() -> None:
     '''
     Main interactive function
     '''
@@ -217,21 +237,22 @@ def main():
     args = parser.parse_args()
     if args.compress and args.decompress:
         print('\nCan\'t compress and decompress files at the same time\n')
-        parser.print_help() 
-        exit(-1)
+        parser.print_help()
+        sys.exit(-1)
 
     # Check that all input is valid and exists
     check_input(args.input, args.output)
 
-    __VERBOSE__ = args.verbose
+    __verbose__ = args.verbose
 
     if args.compress:
-        if __VERBOSE__:
-            print(f'Compressing {args.input} and writing data to {args.output}')
+        if __verbose__:
+            print(f'Compressing {args.input} and writing data to\
+                    {args.output}')
         compress_file(args.input, args.output)
 
     if args.decompress:
-        pass
+        decompress_file(args.input, args.output)
 
 
 if __name__ == '__main__':

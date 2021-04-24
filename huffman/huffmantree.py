@@ -3,7 +3,7 @@ Huffmantree implementation
 """
 import heapq
 from heapq import heapify
-import bitarray
+from bitarray import bitarray
 from node import Node
 
 
@@ -180,7 +180,7 @@ class HuffmanTree:
             heapq.heappush(heap_list, pnode)
         return heapq.heappop(heap_list)
 
-    def build_tree_dict(self, node: Node, code: int):
+    def build_tree_dict(self, node, code: int):
         '''
         Builds the huffman tree recursively.
         '''
@@ -192,7 +192,7 @@ class HuffmanTree:
                     Code: {code},\
                     Leaf node: {node.get_symbol() is not None}')
         if node.get_symbol() is not None:
-            self._tree[node] = bitarray(code, endian=self._endian)
+            self._tree[node] = bitarray(code)
 
         self.build_tree_dict(node.get_lchild(), code + '0')
         self.build_tree_dict(node.get_rchild(), code + '1')
