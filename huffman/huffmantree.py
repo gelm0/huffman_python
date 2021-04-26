@@ -112,7 +112,7 @@ class HuffmanTree:
         Helper function to build huffman tree from file.
         See buld_tree_from_data for logic.
         '''
-        with open(file_name, 'r') as fin:
+        with open(file_name, 'rb') as fin:
             self.build_tree_from_data(fin.read())
 
     def build_tree_from_data(self, data: str):

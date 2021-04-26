@@ -45,7 +45,7 @@ def compress_file(input_file, output_file):
     '''
     huffman = huffmantree.HuffmanTree(print_tree=__verbose__)
     symbol_tree = huffman.get_symbol_tree(file_name=input_file)
-    with open(input_file, 'r') as fin, open(output_file, 'wb') as fout:
+    with open(input_file, 'rb') as fin, open(output_file, 'wb') as fout:
         compressed_data = compress(symbol_tree, fin.read())
         fout.write(compressed_data)
 
@@ -56,7 +56,6 @@ def decompress_file(input_file, output_file):
             contents in the
     input_file. The huffman tree will then be used to try and decode the data.
     If successful will write the decoded data to the supplied output file.
-
     Parameters
     ---------
     input_file: file, required
@@ -70,7 +69,7 @@ def decompress_file(input_file, output_file):
     HuffmanHeaderException
         If header can't be decoded or the file doesn't contain a valid header.
     '''
-    with open(input_file, 'rb') as fin, open(output_file, 'w') as fout:
+    with open(input_file, 'rb') as fin, open(output_file, 'wb') as fout:
         decompressed_data = decompress(fin.read())
         fout.write(decompressed_data)
 
@@ -80,8 +79,11 @@ def compress(symbol_tree, data):
     Main function for compressing
     '''
     header = construct_header(symbol_tree)
+    with open('comp_symbol_tree', 'wb') as fs:
+        for k,v in symbol_tree.items():
+            fs.write(b'{k},{v}\n')
     encoded_data = encode(symbol_tree, data)
-    print(header+encoded_data)
+    print(data)
     return header + encoded_data
 
 
@@ -91,6 +93,9 @@ def decompress(compressed_data):
     '''
     header, encoded_data = deconstruct_compressed_data(compressed_data)
     symbol_tree = read_header(header)
+    with open('decomp_symbol_tree', 'w') as fs:
+        for k,v in symbol_tree.items():
+            fs.write(f'{k},{v.to01()}\n')
 
     return decode(symbol_tree, encoded_data)
 
@@ -120,7 +125,7 @@ def construct_header(symbol_tree: dict):
         if not left_tree_visited and code.to01().startswith('1'):
             symbols += b'-1, -1\n'
             left_tree_visited = True
-        symbols += b'%d,%s\n' % (ord(symbol), code.to01()[1:].encode())
+        symbols += b'%x,%s\n' % (symbol, code.to01()[1:].encode())
 
     # Need an indicator to know where header ends
     return symbols + b'HEND\n'
@@ -145,10 +150,10 @@ def deconstruct_compressed_data(compressed_data):
             break
         keyval = line.decode().split(',')
         header[keyval[0]] = keyval[1]
-    unused = int(split_data[-1])
+    unused = int(split_data[-1],16)
     encoded_data = split_data[data_start:-1]
     bitdata = bitarray()
-    bitdata.frombytes(b''.join(encoded_data))
+    bitdata.frombytes(b'\n'.join(encoded_data))
 
     if unused > 0:
         del bitdata[-unused:]
@@ -163,26 +168,23 @@ def read_header(header: dict) -> dict:
     tree_path_prefix = '0'
     left_tree_visited = False
 
-    print(header)
     for key, val in header.items():
         if not left_tree_visited and key == '-1':
             tree_path_prefix = '1'
             left_tree_visited = True
             continue
 
-        print(key, val)
-        symbol_tree[chr(int(key))] = bitarray(tree_path_prefix + val)
+        symbol_tree[int(key,16)] = bitarray(tree_path_prefix + val)
 
-    print('SYMBOL_TREE')
-    print(symbol_tree)
     return symbol_tree
 
 
 def decode(symbol_tree: dict, encoded_data):
     '''Decompresses bytes in data into it's original format'''
     decode_tree = decodetree(symbol_tree)
-    decoded_list = encoded_data.decode(decode_tree)
-    return ''.join(decoded_list)
+    return bytearray(encoded_data.decode(decode_tree))
+
+
 
 
 def check_input(input_file: str, output_file: str) -> None:
