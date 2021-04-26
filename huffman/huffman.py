@@ -1,3 +1,6 @@
+'''
+Huffman compress/decompress
+'''
 import argparse
 import sys
 import os.path
@@ -5,26 +8,6 @@ from bitarray import bitarray, decodetree
 import huffmantree
 
 __verbose__ = False
-
-
-class HuffmanInitException(Exception):
-    '''
-    Exception to be thrown when Huffman tree has not been initialized
-    '''
-    def __init__(self, message):
-        self._message = message
-
-    def __str__(self):
-        return f'Huffman tree has not been initialized properly.\
-                {self._message}.'
-
-
-class HuffmanHeaderException(Exception):
-    '''
-    To be thrown header is missing or we are unable to read the it correcly
-    '''
-    def __str__(self):
-        return 'Header missing or could not be decoded properly.'
 
 
 def compress_file(input_file, output_file):
@@ -63,44 +46,39 @@ def decompress_file(input_file, output_file):
 
     output_file: file, required
         The output file which where the decoded data should be written.
-
-    Raises
-    -----
-    HuffmanHeaderException
-        If header can't be decoded or the file doesn't contain a valid header.
     '''
     with open(input_file, 'rb') as fin, open(output_file, 'wb') as fout:
         decompressed_data = decompress(fin.read())
         fout.write(decompressed_data)
 
 
-def compress(symbol_tree, data):
+def compress(symbol_tree: dict, data: bytes) -> bytes:
     '''
     Main function for compressing
+
+    Construct header from huffman tree then encodes data and returns result
+    
+    The header contains a line for each symbol with corresponding huffman code
+    which is followed by the binary data. The last line in the binary content
+    is reserved for how much padding we need to remove when decompressing the 
+    content again.
     '''
     header = construct_header(symbol_tree)
-    with open('comp_symbol_tree', 'wb') as fs:
-        for k,v in symbol_tree.items():
-            fs.write(b'{k},{v}\n')
     encoded_data = encode(symbol_tree, data)
-    print(data)
     return header + encoded_data
 
 
-def decompress(compressed_data):
+def decompress(compressed_data: bytes) -> bytes:
     '''
     Main function for decompressing
+
     '''
     header, encoded_data = deconstruct_compressed_data(compressed_data)
     symbol_tree = read_header(header)
-    with open('decomp_symbol_tree', 'w') as fs:
-        for k,v in symbol_tree.items():
-            fs.write(f'{k},{v.to01()}\n')
-
     return decode(symbol_tree, encoded_data)
 
 
-def construct_header(symbol_tree: dict):
+def construct_header(symbol_tree: dict) -> bytes:
     '''Builds the header from left to right based on the tree 
 
     Parameters
@@ -131,8 +109,24 @@ def construct_header(symbol_tree: dict):
     return symbols + b'HEND\n'
 
 
-def encode(symbol_tree: dict, text: str):
-    '''Compresses a string based text to bytes based on a huffman tree'''
+def encode(symbol_tree: dict, text: bytes) -> bytes:
+    '''
+    Compresses binary content to bytes based on a huffman tree contained in
+    symbol tree.
+
+    Parameters
+    ---------
+    symbol_tree:
+        dict with key,values of symbol_tree[symbol] = bitarray(huffman_code)
+    text:
+        binary content to be encoded
+
+    Returns
+    -------
+    bytes:
+        encoded data followed by newline and unused bytes i.e.
+        how much padding we need to remove when decoding
+    '''
     encode = bitarray()
     encode.encode(symbol_tree, text)
     unused = encode.buffer_info()[3]
@@ -140,7 +134,26 @@ def encode(symbol_tree: dict, text: str):
 
     return encode.tobytes() + b'\n' + unused_buffer
 
-def deconstruct_compressed_data(compressed_data):
+def deconstruct_compressed_data(compressed_data: bytes) -> (dict, bitarray):
+    '''
+    Splits the encoded data into their respective parts
+    
+    Extracts three parts from the encoded data: huffman tree, data, padding
+    Will return a huffman tree and the data with the removed padding.
+
+    Parameters
+    ---------
+    compressed_data:
+        Binary huffman encoded content
+
+    Returns 
+    -------
+        header: dict
+            The decoded header in a dict containing the decoded huffman symbol
+            tree
+        encoded_data: bitarray:
+            The actual encoded data as a bitarray
+    '''
     split_data = compressed_data.split(b'\n')
     header = {}
     data_start = -1
@@ -150,7 +163,7 @@ def deconstruct_compressed_data(compressed_data):
             break
         keyval = line.decode().split(',')
         header[keyval[0]] = keyval[1]
-    unused = int(split_data[-1],16)
+    unused = int(split_data[-1], 16)
     encoded_data = split_data[data_start:-1]
     bitdata = bitarray()
     bitdata.frombytes(b'\n'.join(encoded_data))
@@ -174,12 +187,12 @@ def read_header(header: dict) -> dict:
             left_tree_visited = True
             continue
 
-        symbol_tree[int(key,16)] = bitarray(tree_path_prefix + val)
+        symbol_tree[int(key, 16)] = bitarray(tree_path_prefix + val)
 
     return symbol_tree
 
 
-def decode(symbol_tree: dict, encoded_data):
+def decode(symbol_tree: dict, encoded_data: bytes) -> bytes:
     '''Decompresses bytes in data into it's original format'''
     decode_tree = decodetree(symbol_tree)
     return bytearray(encoded_data.decode(decode_tree))

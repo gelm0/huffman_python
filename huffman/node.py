@@ -1,3 +1,6 @@
+'''
+Class for building a tree
+'''
 class Node:
     def __init__(self, symbol, freq):
         self._symbol = symbol

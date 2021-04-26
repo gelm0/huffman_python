@@ -7,6 +7,18 @@ from bitarray import bitarray
 from node import Node
 
 
+class HuffmanInitException(Exception):
+    '''
+    Exception to be thrown when Huffman tree has not been initialized
+    '''
+    def __init__(self, message):
+        self._message = message
+
+    def __str__(self):
+        return f'Huffman tree has not been initialized properly.\
+                {self._message}.'
+
+
 class HuffmanTree:
     '''Class to create a huffman tree
 
@@ -32,54 +44,57 @@ class HuffmanTree:
     endian: str, optional, default 'big'
         endianess of bitarray used.
     '''
-    def __init__(self, endian='big', print_tree=False):
+    def __init__(self, endian: str = 'big', print_tree: bool = False):
         self._print_tree: bool = print_tree
         self._endian: str = endian
         self._tree: dict = {}
 
     # Might need a deep copy here if this fucks with the original node tree
-    def get_symbol_tree(self, file_name: str = None, data: str = None):
+    def get_symbol_tree(self, file_name: str = None, data: str = None) -> dict:
         '''
         Creates a huffman tree dict. ['symbol': bitarray(Huffman Code)]
 
         Parameters
         ---------
         file_name: str, optional
-            Name of the file which content should be used to construct the huffman tree.
+            Name of the file which content should be used to construct the
+            huffman tree.
         data: str, optional
             Input string which should be used to construct the huffman tree.
         If both are supplied the file_name will take precident.
 
         Returns
         ------
-        A dictionary of key,values with types [str, bitarray] where the bitarray contains the
-        corresponding huffman code for the symbol.
+        A dictionary of key,values with types [str, bitarray] where the
+        bitarray contains the corresponding huffman code for the symbol.
 
         Raises
         -----
         HuffmanInitException if neither file_name or data is supplied
         '''
         self.check_tree_init(file_name, data)
-        return dict(sorted(dict(map(lambda node: (node[0].get_symbol(), node[1]),\
-                self._tree.items())).items(),\
-                key = lambda val : val[1]))
+        return dict(sorted(dict(map(lambda node: (node[0].get_symbol(),
+                                                  node[1]),
+                    self._tree.items())).items(),
+                    key=lambda val: val[1]))
 
-    def get_tree(self, file_name: str = None, data: str = None):
+    def get_tree(self, file_name: str = None, data: str = None) -> dict:
         '''
         Creates a huffman tree dict. ['Node': bitarray(Huffman Code)]
 
         Parameters
         ---------
         file_name: str, optional
-            Name of the file which content should be used to construct the huffman tree.
+            Name of the file which content should be used to construct the
+            huffman tree.
         data: str, optional
             Input string which should be used to construct the huffman tree.
         If both are supplied the file_name will take precident.
 
         Returns
         ------
-        A dictionary of key,values with types [Node, bitarray] where the bitarray contains the
-        corresponding huffman code for the Node.
+        A dictionary of key,values with types [Node, bitarray] where the
+        bitarray contains the corresponding huffman code for the Node.
 
         Raises
         -----
@@ -88,19 +103,19 @@ class HuffmanTree:
         self.check_tree_init(file_name, data)
         return self._tree
 
-    def check_tree_init(self, file_name: str, data: str):
+    def check_tree_init(self, file_name: str, data: str) -> None:
         '''
         Initializes the huffman tree
         '''
         self.tree_init(file_name, data)
         if not self._tree:
-            raise HuffmanInitException('Please supply data or file_name to '\
-                    'initialize the huffman tree')
+            raise HuffmanInitException('Please supply data or file_name to '
+                                       'initialize the huffman tree')
 
     def tree_init(self, file_name: str, data: str):
         '''
-        Tries to initialize the huffman tree with from the file_name. If that isin't supplied
-        tries with data instead.
+        Tries to initialize the huffman tree with from the file_name.
+        If that isin't supplied tries with data instead.
         '''
         if file_name:
             self.build_tree_from_file(file_name)
@@ -115,12 +130,13 @@ class HuffmanTree:
         with open(file_name, 'rb') as fin:
             self.build_tree_from_data(fin.read())
 
-    def build_tree_from_data(self, data: str):
+    def build_tree_from_data(self, data: str) -> None:
         '''
         Responsible for the build flow of the huffman tree.
-        First creates a dictionary of all corresponding characters frequency in the supplied data.
-        Then constructs a minheap with the lowest frequency node as root
-        Lastly the tree is traversed bottom-up to construct the huffman tree.
+        First creates a dictionary of all corresponding characters frequency
+        in the supplied data. Then constructs a minheap with the lowest
+        frequency node as root. Lastly the tree is traversed bottom-up to
+        construct the huffman tree.
 
         Parameters
         ---------
@@ -132,12 +148,13 @@ class HuffmanTree:
         self.build_tree_dict(root, '')
 
     @classmethod
-    def count_freq(cls, data: str):
+    def count_freq(cls, data: str) -> dict:
         '''
         Counts the frequency of all characters in supplied string.
 
         Parameters:
-        data: str, the supplied content for which the frequency should be calculated.
+        data: str, the supplied content for which the frequency should be
+        calculated.
 
         Returns
         ------
@@ -149,28 +166,29 @@ class HuffmanTree:
         return freq
 
     @classmethod
-    def heapify_freq(cls, char_freq: dict):
+    def heapify_freq(cls, char_freq: dict) -> list:
         '''
         Constructs a min heap from a dictionary
 
         Parameters:
-        data: dict: [str,int] dict with key,values symbol and their corresponding frequency in the
-        text as value.
+        data: dict: [str,int] dict with key,values symbol and their
+        corresponding frequency in the text as value.
 
         Returns
         ------
         list
         '''
         node_list = []
-        for key,value in sorted(char_freq.items(), key=lambda val : val[1]):
-            node_list.append(Node(key,value))
+        for key, value in sorted(char_freq.items(), key=lambda val: val[1]):
+            node_list.append(Node(key, value))
         heapify(node_list)
         return node_list
 
     @classmethod
-    def build_huffman_tree(cls, heap_list: list):
+    def build_huffman_tree(cls, heap_list: list) -> list:
         '''
-        Traverses the whole tree to buid the corresponding tree with help from the Node class.
+        Traverses the whole tree to buid the corresponding tree with help
+        from the Node class.
         '''
         while len(heap_list) > 1:
             lnode = heapq.heappop(heap_list)
@@ -180,7 +198,7 @@ class HuffmanTree:
             heapq.heappush(heap_list, pnode)
         return heapq.heappop(heap_list)
 
-    def build_tree_dict(self, node, code: int):
+    def build_tree_dict(self, node: Node, code: int) -> dict:
         '''
         Builds the huffman tree recursively.
         '''
