@@ -24,13 +24,35 @@ python3 setup.py test
 
 #### CLI Usage
 
-python3 huffman.py <OPTIONS>
+python3 huffman.py *OPTIONS*
 
-- -h or --help
-
-
-
+- **-h or --help** Shows available options
+- **-e or --encode** Encode a file (This or decode option must be supplied)
+- **-d or --decode** Decode a file (This or encode option must be supplied)
+- **-i or --input** Input file. Raw text format if file is to be decoded or encoded file if to be decoded.
+- **-o or --output** Output file of the decoded/encoded file.
+- **-c or --canon** If the file is to be encoded with canonical format.
+- **-v or --verbose** Shows some extra verbose output while constructing the huffman tree. 
 #### API
+If anyone wishes to try the code out the main encoding/decoding algorithms recides in compression/huffmantree.py while the header encoding mechanisms recides in huffman.py
+
+```python
+from compression import huffman
+
+#Encode file non canonical
+# Just supply filenames of the input and output file
+huffman.encode_file('example_file', example_output')
+
+#Decode file
+huffman.encode_file('example_output', example_file_decoded')
+
+#Encode bytes
+example_string = b'this is a test string'
+encoded_data = huffman.encode_data(example_string)
+
+#Decode bytes
+decoded_data = huffman.decode_data(encoded_data)
+```
 
 #### Further implementation
 In the future I would like to implement the LZ78 algorithm together with this library as well. Shouldn't be a huge task but currently looking at some other sideprojects so I am going to have comeback to this.
