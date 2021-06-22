@@ -30,7 +30,7 @@ class HuffmanTest(unittest.TestCase):
                                 + '/test/resources/'
     test_file_1 = resources + 'short_text.txt'
     test_file_2 = resources + 'medium_text.txt'
-    test_file_3 = resources + '84-h.htm'
+    test_file_3 = resources + '84-h.txt'
 
     def test_shorter_string_huffman(self):
         data_read, decompressed_data = test_compress(self.test_file_1)
