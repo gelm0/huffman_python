@@ -4,19 +4,18 @@ Huffman compress/decompress
 import argparse
 import sys
 import os.path
+from typing import BinaryIO
 from bitarray import bitarray, decodetree
-import huffmantree
+from bitarray.util import zeros
+from compression import huffmantree
 
-__verbose__ = False
+VERBOSE = False
 
-
-def compress_file(input_file, output_file):
+def encode_file(input_file: str, output_file: str, canonical=False) -> None:
     '''Attempts to open and read from the supplied input_file.
     If successful will construct a huffman tree from the data contained in\
     the text and huffman encode the data contained in the input_file and\
     write it to the output_file.
-
-    TODO: Input needs to be larger then one char. Input > 1
 
     Parameters
     ---------
@@ -26,14 +25,12 @@ def compress_file(input_file, output_file):
     output_file: file, required
         The output file which where the encoded data should be written.
     '''
-    huffman = huffmantree.HuffmanTree(print_tree=__verbose__)
-    symbol_tree = huffman.get_symbol_tree(file_name=input_file)
     with open(input_file, 'rb') as fin, open(output_file, 'wb') as fout:
-        compressed_data = compress(symbol_tree, fin.read())
+        compressed_data = encode_data(fin.read(), canonical)
         fout.write(compressed_data)
 
 
-def decompress_file(input_file, output_file):
+def decode_file(input_file: str, output_file: str) -> None:
     '''Attempts to open and read from the supplied input_file.
     If successful will try and construct a huffman tree from the header\
             contents in the
@@ -48,33 +45,62 @@ def decompress_file(input_file, output_file):
         The output file which where the decoded data should be written.
     '''
     with open(input_file, 'rb') as fin, open(output_file, 'wb') as fout:
-        decompressed_data = decompress(fin.read())
+        decompressed_data = decode_data(fin.read())
         fout.write(decompressed_data)
 
 
-def compress(symbol_tree: dict, data: bytes) -> bytes:
+def encode_data(data: bytes, canonical=False) -> bytes:
     '''
     Main function for compressing
 
     Construct header from huffman tree then encodes data and returns result
     
     The header contains a line for each symbol with corresponding huffman code
-    which is followed by the binary data. The last line in the binary content
+     which is followed by the binary data. The last line in the binary content
     is reserved for how much padding we need to remove when decompressing the 
     content again.
+
+    Parameters
+    ---------
+    data: bytes
+        Binary content to be encoded
+    canonical: bool
+        If we should encode canonical or not
     '''
-    header = construct_header(symbol_tree)
+    huffman = huffmantree.HuffmanTree(print_tree=VERBOSE, data=data)
+    # Get symbol tree depending on canonical or not
+    symbol_tree = (huffman.get_canon_tree() if canonical
+                   else huffman.get_symbol_tree_by_val())
+    # Construct header depending onn canonical or not
+    header = (construct_canonical_header(symbol_tree) if canonical
+              else construct_header(symbol_tree))
     encoded_data = encode(symbol_tree, data)
     return header + encoded_data
 
 
-def decompress(compressed_data: bytes) -> bytes:
+def decode_data(compressed_data: bytes) -> bytes:
     '''
     Main function for decompressing
 
+    This function tries to decode the input data first as a 'normal'
+    huffman encoding and if that doesn't work it will try to decode it
+    as an canonical huffman encoding. If that fails we are all doomed.
     '''
-    header, encoded_data = deconstruct_compressed_data(compressed_data)
-    symbol_tree = read_header(header)
+    header, encoded_data = deconstruct_encoded_data(compressed_data)
+    symbol_tree = {}
+    try:
+        # Regular huffman
+        symbol_tree = read_header(header)
+    except ValueError:
+        if VERBOSE:
+            print('Failed to deserialize huffman header, trying canonical')
+        try:
+            # Canonica huffman
+            # Initialize first value in symbol_tree
+            symbol_tree = read_canonical_header(header)
+        except ValueError as error:
+            exit_with_message('Could not intepret header as canonical'
+                              + f' {repr(error)}')
     return decode(symbol_tree, encoded_data)
 
 
@@ -128,13 +154,16 @@ def encode(symbol_tree: dict, text: bytes) -> bytes:
         how much padding we need to remove when decoding
     '''
     encode = bitarray()
+    # Encode data
     encode.encode(symbol_tree, text)
+    # Get extra bytes padding of encoding
     unused = encode.buffer_info()[3]
     unused_buffer = b'%d' % unused
 
     return encode.tobytes() + b'\n' + unused_buffer
 
-def deconstruct_compressed_data(compressed_data: bytes) -> (dict, bitarray):
+
+def deconstruct_encoded_data(compressed_data: bytes) -> (dict, bitarray):
     '''
     Splits the encoded data into their respective parts
     
@@ -188,38 +217,89 @@ def read_header(header: dict) -> dict:
             continue
 
         symbol_tree[int(key, 16)] = bitarray(tree_path_prefix + val)
-
     return symbol_tree
 
 
-def decode(symbol_tree: dict, encoded_data: bytes) -> bytes:
+def decode(symbol_tree: dict, encoded_data: bitarray) -> bytes:
     '''Decompresses bytes in data into it's original format'''
     decode_tree = decodetree(symbol_tree)
     return bytearray(encoded_data.decode(decode_tree))
 
 
+def construct_canonical_header(symbol_tree: dict) -> bytes:
+    '''
+    Constructs a canonical huffman tree header from the supplied symbol_tree
+    '''
+    symbols = b''
+    for symbol, code in symbol_tree.items():
+        symbols += b'%x,%d\n' % (symbol, len(code))
+    return symbols + b'HEND\n'
 
 
-def check_input(input_file: str, output_file: str) -> None:
+def read_canonical_header(header: dict) -> dict:
+    '''
+    Instantiates the initial value for the recursive function
+    which then consructs the canonical huffman tree from the 
+    header.
+    '''
+    symbol_tree = {}
+    symbol = next(iter(header.keys()))
+    init_code = zeros(int(header[symbol]))
+    symbol_tree[int(symbol, 16)] = init_code
+    del header[symbol]
+    read_canon_recurse(header, symbol_tree, init_code)
+    return symbol_tree
+
+
+def read_canon_recurse(header: dict, symbol_tree: dict,
+                       code: bitarray) -> bytes:
+    '''
+    Reads a canonical huffman tree recursively.
+    Needs to be instantiated with initial value from
+    instantiate_canonical_read
+    '''
+    if len(header) == 0:
+        return
+    symbol = next(iter(header.keys()))
+    curr_len = len(code)
+    next_len = int(header[symbol])
+    del header[symbol]
+    next_code = huffmantree.Util.bitwise_add(code, zeros(len(code) - 1)
+                                             + bitarray('1'))
+    if next_len > curr_len:
+        # Pad with zero after increment when length has shifted
+        next_code += bitarray('1')
+    symbol_tree[int(symbol, 16)] = next_code
+    read_canon_recurse(header, symbol_tree, next_code)
+
+
+def check_input(args) -> None:
     '''
     Checks input and output file of user input in main function
     Exits with a negative value if it finds any errors otherwise
     does nothing
     '''
-    if not input_file:
+    if args.encode is False and args.decode is False:
+        exit_with_message('Encode or decode argument must be supplied')
+
+    if args.encode and args.decode:
+        exit_with_message('Can\'t compress and decompress files at the same'
+                          + ' time')
+
+    if not args.input:
         exit_with_message('No input file is supplied')
 
-    if not output_file:
+    if not args.output:
         exit_with_message('No output file is supplied')
  
-    if not os.path.isfile(input_file):
+    if not os.path.isfile(args.input):
         exit_with_message('Input file doesn\'t exist')
 
-    if os.path.isdir(output_file):
+    if os.path.isdir(args.output):
         exit_with_message('Output file can\'t be a directory')
 
-    if (dir_split := output_file.rfind('/')) > 0:
-        if not os.path.exists(output_file[:dir_split + 1]):
+    if (dir_split := args.output.rfind('/')) > 0:
+        if not os.path.exists(args.output[:dir_split + 1]):
             exit_with_message('Specified path to output file doesn\'t exist')
 
 
@@ -235,39 +315,44 @@ def main() -> None:
     '''
     Main interactive function
     '''
+    # Check that all input is valid and exists
+    args = parse_args(sys.argv[1:])
+    check_input(args)
+    VERBOSE = args.verbose
+    if args.encode:
+        if VERBOSE:
+            print(f'Encoding {args.input} and writing data to'
+                  + f' {args.output}')
+        encode_file(args.input, args.output, args.canon)
+
+    if args.decode:
+        if VERBOSE:
+            print(f'Decoding {args.input} and writing data to'
+                  + f' {args.output}')
+        decode_file(args.input, args.output)
+
+
+def parse_args(args):
+    '''
+    Parses program argumens
+    '''
     parser = argparse.ArgumentParser(
             description='Huffman encode and decode files.')
-    parser.add_argument('--compress', '-c', action='store_true',
-                        help='Compress a file')
-    parser.add_argument('--decompress', '-d', action='store_true',
-                        help='Decompress a file')
+    parser.add_argument('--encode', '-e', action='store_true',
+                        help='Encodes a file')
+    parser.add_argument('--decode', '-d', action='store_true',
+                        help='Decodes a file')
     parser.add_argument('--input', '-i', action='store',
                         help='Path to the input file\
                                 where content should be read from')
+    parser.add_argument('--canon', '-c', action='store_true',
+                        help='Encode with canonical format')
     parser.add_argument('--output', '-o', action='store',
                         help='Path to the output file where\
                                 content should be written')
     parser.add_argument('--verbose', '-v', action='store_true',
                         help='Verbose output')
-    args = parser.parse_args()
-    if args.compress and args.decompress:
-        print('\nCan\'t compress and decompress files at the same time\n')
-        parser.print_help()
-        sys.exit(-1)
-
-    # Check that all input is valid and exists
-    check_input(args.input, args.output)
-
-    __verbose__ = args.verbose
-
-    if args.compress:
-        if __verbose__:
-            print(f'Compressing {args.input} and writing data to\
-                    {args.output}')
-        compress_file(args.input, args.output)
-
-    if args.decompress:
-        decompress_file(args.input, args.output)
+    return parser.parse_args(args)
 
 
 if __name__ == '__main__':
